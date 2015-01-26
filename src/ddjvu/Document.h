@@ -124,6 +124,19 @@ namespace ddjvu
 			}
 		}
 
+		void abortPageDecode(std::string id) {
+			std::lock_guard<std::mutex> lck(mtx_);
+			for (auto it = pages_.begin(); it != pages_.end(); ++it) {
+				if ((*it)->getId() == id) {
+						if ((*it)->abort()) {
+							auto page = *it;
+							pages_.erase(it);
+							return;
+						}
+				}
+			}
+		}
+
 		bool isDocumentValid() {
 			return isDocumentValid_;
 		}
@@ -178,6 +191,32 @@ namespace ddjvu
 			return std::shared_ptr<IBmp<T>>();
 		}
 
+		std::shared_ptr<IBmp<T>> getPageBitmap(int pageNum = 0, int width = 0, int height = 0, bool wait = false, std::string id = "") {
+			std::shared_ptr<Page<T>> page = findPage(id);
+			if (page) {
+				/*
+				if (wait) {
+					auto pageNotifier = page->getPageNotifier();
+					while (!pageNotifier->check(message_page::RENDERED))
+						pageNotifier->wait();
+				}
+				*/
+				return page->getBitmap();
+			} else {
+				auto page = std::shared_ptr<Page<T>>(new Page<T>(document_, delegateBmpFactory_, windowNotifier_, pageNum, width, height, wait, id));
+				{
+					std::lock_guard<std::mutex> lck(mtx_);
+					pages_.push_back(page);
+				}
+				/*
+				if (wait)
+					page->wait();
+					return page->getBitmap();
+				*/
+			}
+			return std::shared_ptr<IBmp<T>>();
+		}
+
 		GP<DataPool> getPool()
 		{
 			return pool_;
@@ -203,6 +242,14 @@ namespace ddjvu
 			return views;
 		}
 
+		bool isBitmapReady(std::string id) {
+			std::shared_ptr<Page<T>> page = findPage(id);
+			if (page) {
+				return page->isBitmapReady();
+			}
+			return false;
+		}
+
 		std::shared_ptr<Notifier> getWindowNotifier() {
 			return windowNotifier_;
 		}
@@ -220,6 +267,18 @@ namespace ddjvu
 					(*it)->getWidth() == width &&
 					(*it)->getHeight() == height &&
 					(*it)->getView() == view)
+					page = *it;
+			}
+
+			return page;
+		}
+
+		std::shared_ptr<Page<T>> findPage(std::string id) {
+			std::lock_guard<std::mutex> lck(mtx_);
+
+			std::shared_ptr<Page<T>> page;
+			for (auto it = pages_.begin(); it != pages_.end(); ++it) {
+				if ((*it)->getId() == id)
 					page = *it;
 			}
 
@@ -306,6 +365,14 @@ namespace ddjvu
 						switch( msg->m_any.tag )
 						{
 						case DDJVU_ERROR:
+							{
+							std::string out = "DDJVU_ERROR";
+							OutputDebugStringA(out.c_str());
+							fprintf(stderr,"ddjvu: %s\n", msg->m_error.message);
+							if (msg->m_error.filename)
+								fprintf(stderr,"ddjvu: '%s:%d'\n", 
+								msg->m_error.filename, msg->m_error.lineno);
+							}
 							break;
 						case DDJVU_INFO:
 							break;
@@ -331,10 +398,30 @@ namespace ddjvu
 							break;
 						case DDJVU_PAGEINFO:
 							if (msg->m_any.page) {
+								//Page<T> *page = (Page<T> *)ddjvu_page_get_user_data(msg->m_any.page);
+								std::string out = "";
+								if (ddjvu_page_decoding_status(msg->m_any.page) == DDJVU_JOB_NOTSTARTED)
+									out += " DDJVU_JOB_NOTSTARTED\n";
+								if (ddjvu_page_decoding_status(msg->m_any.page) == DDJVU_JOB_STARTED)
+									out += " DDJVU_JOB_STARTED\n";
+								if (ddjvu_page_decoding_status(msg->m_any.page) == DDJVU_JOB_OK)
+									out += "DDJVU_JOB_OK ";
+								if (ddjvu_page_decoding_status(msg->m_any.page) == DDJVU_JOB_FAILED) {
+									Page<T> *page = (Page<T> *)ddjvu_page_get_user_data(msg->m_any.page);
+									if (page)
+										page->getPageNotifier()->set(message_page::ABBORTED);
+									out += page->getId();
+									out += " DDJVU_JOB_FAILED\n";
+								}
+								if (ddjvu_page_decoding_status(msg->m_any.page) == DDJVU_JOB_STOPPED)
+									out += " DDJVU_JOB_STOPPED\n";
+								OutputDebugStringA(out.c_str());
 								if (ddjvu_page_decoding_status(msg->m_any.page) == DDJVU_JOB_OK) {
 									Page<T> *page = (Page<T> *)ddjvu_page_get_user_data(msg->m_any.page);
 									if (page)
 										page->getPageNotifier()->set(message_page::DECODED);
+									out += page->getId();
+									out += " DDJVU_JOB_OK\n";
 								}
 							}
 							break;

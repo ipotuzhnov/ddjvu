@@ -58,7 +58,17 @@ namespace ddjvu {
 		// You should use ddjvu::Notifier to handle page decode completion.
 		std::shared_ptr<IBmp<T>> getPageBitmap(int pageNum = 0, int width = 0, int height = 0, bool wait = false, int view = 0) {
 			return document_->getPageBitmap(pageNum, width, height, wait, view);
-		}		
+		}
+		std::shared_ptr<IBmp<T>> getPageBitmap(int pageNum = 0, int width = 0, int height = 0, bool wait = false, std::string id = "") {
+			return document_->getPageBitmap(pageNum, width, height, wait, id);
+		}
+		//
+		// Checks if page is rendered.
+		//    true if page is rendered.
+		//    false if page is aborted.
+		bool isBitmapReady(std::string id = "") {
+			return document_->isBitmapReady(id);
+		}
 		// Fuction return ddjvu::Notifier
 		std::shared_ptr<Notifier> getWindowNotifier() {
 			return document_->getWindowNotifier();
@@ -70,6 +80,10 @@ namespace ddjvu {
 		// Stop page decoding
 		void abortPageDecode(int pageNum, int width, int height, int view) {
 			document_->abortPageDecode(pageNum, width, height, view);
+		}
+
+		void abortPageDecode(std::string id) {
+			document_->abortPageDecode(id);
 		}
 	};
 

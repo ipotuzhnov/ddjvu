@@ -6,6 +6,7 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <string>
 
 #include "ddjvuapi.h"
 
@@ -30,6 +31,7 @@ namespace ddjvu
 		int view_;
 		std::shared_ptr<IBmp<T>> bitmap_;
 		bool isAborted_;
+		std::string id_;
 
 		std::shared_ptr<Notifier> pageNotifier_;
 		std::shared_ptr<Notifier> windowNotifier_;
@@ -122,15 +124,49 @@ namespace ddjvu
 			decodeThread_ = std::thread(&Page::decodeThreadFunction_, this);
 
 			if (wait) {
-				while (!pageNotifier_->check(message_page::RENDERED))
+				while (!pageNotifier_->check(message_page::RENDERED) && !pageNotifier_->check(message_page::ABBORTED))
 					pageNotifier_->wait();
 			}
+		}
+
+		Page(ddjvu_document_t *document, std::shared_ptr<IBmpFactory<T>> delegateBmpFactory, std::shared_ptr<Notifier> windowNotifier, int pageNum = 0, int width = 0, int height = 0, bool wait = false, std::string id = "") {
+			pageNotifier_ = std::shared_ptr<Notifier>(new Notifier(message_map::PAGE));
+			windowNotifier_ = windowNotifier;
+
+			delegateBmpFactory_ = delegateBmpFactory;
+
+			bitmap_ = std::shared_ptr<IBmp<T>>();
+			isAborted_ = false;
+
+			document_ = document;
+			pageNum_ = pageNum;
+			width_ = width;
+			height_ = height;
+			id_ = id;
+
+			page_ = ddjvu_page_create_by_pageno(document_, pageNum_);
+			ddjvu_page_set_user_data(page_, this);
+
+			decodeThread_ = std::thread(&Page::decodeThreadFunction_, this);
 		}
 
 		~Page() {
 			page_ = 0;
 			pageNotifier_->set(message_page::ABBORTED);
 			decodeThread_.join();
+		}
+
+		/*
+		Return:
+			true if page is rendered.
+			false if page is aborted.
+		*/
+		bool isBitmapReady() {
+			while (!pageNotifier_->check(message_page::RENDERED) && !pageNotifier_->check(message_page::ABBORTED))
+				pageNotifier_->wait();
+			if (pageNotifier_->check(message_page::ABBORTED))
+				return false;
+			return true;
 		}
 
 		bool abort() {
@@ -200,6 +236,10 @@ namespace ddjvu
 
 		int getView() {
 			return view_;
+		}
+
+		std::string getId() {
+			return id_;
 		}
 
 		std::shared_ptr<IBmp<T>> getBitmap() {
