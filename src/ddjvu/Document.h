@@ -365,14 +365,14 @@ namespace ddjvu
 						switch( msg->m_any.tag )
 						{
 						case DDJVU_ERROR:
+							/*
 							{
-							std::string out = "DDJVU_ERROR";
-							OutputDebugStringA(out.c_str());
 							fprintf(stderr,"ddjvu: %s\n", msg->m_error.message);
 							if (msg->m_error.filename)
 								fprintf(stderr,"ddjvu: '%s:%d'\n", 
 								msg->m_error.filename, msg->m_error.lineno);
 							}
+							*/
 							break;
 						case DDJVU_INFO:
 							break;
@@ -415,13 +415,11 @@ namespace ddjvu
 								}
 								if (ddjvu_page_decoding_status(msg->m_any.page) == DDJVU_JOB_STOPPED)
 									out += " DDJVU_JOB_STOPPED\n";
-								OutputDebugStringA(out.c_str());
+								//OutputDebugStringA(out.c_str());
 								if (ddjvu_page_decoding_status(msg->m_any.page) == DDJVU_JOB_OK) {
 									Page<T> *page = (Page<T> *)ddjvu_page_get_user_data(msg->m_any.page);
 									if (page)
 										page->getPageNotifier()->set(message_page::DECODED);
-									out += page->getId();
-									out += " DDJVU_JOB_OK\n";
 								}
 							}
 							break;
