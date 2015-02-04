@@ -7,6 +7,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <vector>
+#include <chrono>
 
 namespace ddjvu
 {
@@ -45,6 +46,16 @@ namespace ddjvu
 					return;
 
 			cv_.wait(lck);
+		}
+
+		void waitFor(int message = -1, int seconds = 0) {
+			std::unique_lock<std::mutex> lck(mtx_);
+
+			if (message > 0)
+				if (messages_[message])
+					return;
+
+			cv_.wait_for(lck, std::chrono::seconds(seconds));
 		}
 
 		void set(int message) {
