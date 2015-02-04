@@ -14,6 +14,10 @@
 #include "IBmp.h"
 #include "IBmpFactory.h"
 
+//@TODO remove it later
+#include "src/helpers/safe_instance.h"
+#include "src/helpers/message_helper.h"
+
 namespace ddjvu
 {
 
@@ -21,6 +25,8 @@ namespace ddjvu
 	class Page
 	{
 	private:
+		std::shared_ptr<SafeInstance> safeInstance_;
+
 		std::shared_ptr<IBmpFactory<T>> delegateBmpFactory_;
 
 		ddjvu_document_t *document_;
@@ -42,8 +48,16 @@ namespace ddjvu
 
 		void decodeThreadFunction_()
 		{
-			if (!pageNotifier_->check(message_page::DECODED) && !pageNotifier_->check(message_page::ABBORTED))
-				pageNotifier_->wait();
+			PostLogMessage(safeInstance_, "LOG: before Page::Thread()");
+			while (!pageNotifier_->check(message_page::DECODED) && !pageNotifier_->check(message_page::ABBORTED)) {
+				if (ddjvu_page_decoding_status(page_) == DDJVU_JOB_OK) {
+					pageNotifier_->set(message_page::DECODED);
+				}
+				if (ddjvu_page_decoding_status(page_) == DDJVU_JOB_FAILED) {
+					pageNotifier_->set(message_page::ABBORTED);
+				}
+				pageNotifier_->waitFor(-1, 1);
+			}
 
 			if (pageNotifier_->check(message_page::DECODED) && !pageNotifier_->check(message_page::ABBORTED)) {
 
@@ -101,6 +115,7 @@ namespace ddjvu
 			pageNotifier_->set(message_page::RENDERED);
 
 			windowNotifier_->set(message_window::UPDATE);
+			PostLogMessage(safeInstance_, "LOG: after Page::Thread()");
 		}
 	public:
 		Page(ddjvu_document_t *document, std::shared_ptr<IBmpFactory<T>> delegateBmpFactory, std::shared_ptr<Notifier> windowNotifier, int pageNum = 0, int width = 0, int height = 0, bool wait = false, int view = 0) {
@@ -119,7 +134,7 @@ namespace ddjvu
 			view_ = view;
 
 			page_ = ddjvu_page_create_by_pageno(document_, pageNum_);
-			ddjvu_page_set_user_data(page_, this);
+			//ddjvu_page_set_user_data(page_, this);
 
 			decodeThread_ = std::thread(&Page::decodeThreadFunction_, this);
 
@@ -129,7 +144,11 @@ namespace ddjvu
 			}
 		}
 
-		Page(ddjvu_document_t *document, std::shared_ptr<IBmpFactory<T>> delegateBmpFactory, std::shared_ptr<Notifier> windowNotifier, int pageNum = 0, int width = 0, int height = 0, bool wait = false, std::string id = "") {
+		Page(std::shared_ptr<SafeInstance> safeInstance, ddjvu_document_t *document, std::shared_ptr<IBmpFactory<T>> delegateBmpFactory, std::shared_ptr<Notifier> windowNotifier, int pageNum = 0, int width = 0, int height = 0, bool wait = false, std::string id = "") {
+			safeInstance_ = safeInstance;
+
+			PostLogMessage(safeInstance_, "LOG: before Page::Page()");
+
 			pageNotifier_ = std::shared_ptr<Notifier>(new Notifier(message_map::PAGE));
 			windowNotifier_ = windowNotifier;
 
@@ -145,15 +164,21 @@ namespace ddjvu
 			id_ = id;
 
 			page_ = ddjvu_page_create_by_pageno(document_, pageNum_);
-			ddjvu_page_set_user_data(page_, this);
+			//ddjvu_page_set_user_data(page_, this);
 
 			decodeThread_ = std::thread(&Page::decodeThreadFunction_, this);
+			PostLogMessage(safeInstance_, "LOG: after Page::Page()");
 		}
 
 		~Page() {
 			page_ = 0;
 			pageNotifier_->set(message_page::ABBORTED);
-			decodeThread_.join();
+			PostLogMessage(safeInstance_, "LOG: before ~Page::Page()");
+			if (decodeThread_.joinable())
+				decodeThread_.join();
+			else
+				PostLogMessage(safeInstance_, "LOG: Page::Thread is not joinable");
+			PostLogMessage(safeInstance_, "LOG: after ~Page::Page()");
 		}
 
 		/*
