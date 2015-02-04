@@ -23,6 +23,8 @@
 #include "IBmpFactory.h"
 #include "IBmp.h"
 
+
+
 namespace ddjvu
 {
 
@@ -43,6 +45,9 @@ namespace ddjvu
 	class Document
 	{
 	private:
+		//@TODO remove
+		std::shared_ptr<SafeInstance> safeInstance_;
+
 		std::shared_ptr<IBmpFactory<T>> delegateBmpFactory_;
 
 		GP<DataPool> pool_;
@@ -63,8 +68,9 @@ namespace ddjvu
 		std::mutex mtx_;
 
 	public:
-		Document(GP<DataPool> pool, std::shared_ptr<IBmpFactory<T>> delegateBmpFactory) {
+		Document(GP<DataPool> pool, std::shared_ptr<IBmpFactory<T>> delegateBmpFactory, std::shared_ptr<SafeInstance> safeInstance) {
 			delegateBmpFactory_ = delegateBmpFactory;
+			safeInstance_ = safeInstance;
 
 			isDocumentValid_ = false;
 			pool_ = pool;
@@ -191,7 +197,7 @@ namespace ddjvu
 			return std::shared_ptr<IBmp<T>>();
 		}
 
-		std::shared_ptr<IBmp<T>> getPageBitmap(int pageNum = 0, int width = 0, int height = 0, bool wait = false, std::string id = "") {
+		std::shared_ptr<IBmp<T>> getPageBitmap(std::shared_ptr<SafeInstance> safeInstance, int pageNum = 0, int width = 0, int height = 0, bool wait = false, std::string id = "") {
 			std::shared_ptr<Page<T>> page = findPage(id);
 			if (page) {
 				/*
@@ -203,7 +209,7 @@ namespace ddjvu
 				*/
 				return page->getBitmap();
 			} else {
-				auto page = std::shared_ptr<Page<T>>(new Page<T>(document_, delegateBmpFactory_, windowNotifier_, pageNum, width, height, wait, id));
+				auto page = std::shared_ptr<Page<T>>(new Page<T>(safeInstance, document_, delegateBmpFactory_, windowNotifier_, pageNum, width, height, wait, id));
 				{
 					std::lock_guard<std::mutex> lck(mtx_);
 					pages_.push_back(page);
@@ -279,6 +285,18 @@ namespace ddjvu
 			std::shared_ptr<Page<T>> page;
 			for (auto it = pages_.begin(); it != pages_.end(); ++it) {
 				if ((*it)->getId() == id)
+					page = *it;
+			}
+
+			return page;
+		}
+
+		std::shared_ptr<Page<T>> findPage(ddjvu_page_t *ddjvu_page) {
+			std::lock_guard<std::mutex> lck(mtx_);
+
+			std::shared_ptr<Page<T>> page;
+			for (auto it = pages_.begin(); it != pages_.end(); ++it) {
+				if ((*it)->getPage() == ddjvu_page)
 					page = *it;
 			}
 
@@ -398,8 +416,21 @@ namespace ddjvu
 							break;
 						case DDJVU_PAGEINFO:
 							if (msg->m_any.page) {
+								PostLogMessage(safeInstance_, "LOG: before Document::findPage(ddjvu_page)");
+								ddjvu_page_t *ddjvu_page = msg->m_any.page;
+								if (ddjvu_page == nullptr)
+									PostLogMessage(safeInstance_, "LOG: ddjvu_page == nullptr");
+								auto page = findPage(ddjvu_page);
+								if (page)
+									PostLogMessage(safeInstance_, "LOG: found ddjvu_page");
+								else
+									PostLogMessage(safeInstance_, "LOG: didn't find ddjvu_page");
+
+								PostLogMessage(safeInstance_, "LOG: after Document::findPage(ddjvu_page)");
+
+								PostLogMessage(safeInstance_, "LOG: before Document::DDJVU_PAGEINFO");
 								//Page<T> *page = (Page<T> *)ddjvu_page_get_user_data(msg->m_any.page);
-								std::string out = "";
+								std::string out = "LOG: ";
 								if (ddjvu_page_decoding_status(msg->m_any.page) == DDJVU_JOB_NOTSTARTED)
 									out += " DDJVU_JOB_NOTSTARTED\n";
 								if (ddjvu_page_decoding_status(msg->m_any.page) == DDJVU_JOB_STARTED)
@@ -407,7 +438,7 @@ namespace ddjvu
 								if (ddjvu_page_decoding_status(msg->m_any.page) == DDJVU_JOB_OK)
 									out += "DDJVU_JOB_OK ";
 								if (ddjvu_page_decoding_status(msg->m_any.page) == DDJVU_JOB_FAILED) {
-									Page<T> *page = (Page<T> *)ddjvu_page_get_user_data(msg->m_any.page);
+									//Page<T> *page = (Page<T> *)ddjvu_page_get_user_data(msg->m_any.page);
 									if (page)
 										page->getPageNotifier()->set(message_page::ABBORTED);
 									out += page->getId();
@@ -417,10 +448,12 @@ namespace ddjvu
 									out += " DDJVU_JOB_STOPPED\n";
 								//OutputDebugStringA(out.c_str());
 								if (ddjvu_page_decoding_status(msg->m_any.page) == DDJVU_JOB_OK) {
-									Page<T> *page = (Page<T> *)ddjvu_page_get_user_data(msg->m_any.page);
+									//Page<T> *page = (Page<T> *)ddjvu_page_get_user_data(msg->m_any.page);
 									if (page)
 										page->getPageNotifier()->set(message_page::DECODED);
 								}
+								PostLogMessage(safeInstance_, out);
+								PostLogMessage(safeInstance_, "LOG: after Document::DDJVU_PAGEINFO");
 							}
 							break;
 						case DDJVU_RELAYOUT:

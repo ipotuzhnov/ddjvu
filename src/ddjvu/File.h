@@ -30,8 +30,8 @@ namespace ddjvu {
 	private:
 		std::shared_ptr<Document<T>> document_;
 	public:
-		File(GP<DataPool> pool, std::shared_ptr<IBmpFactory<T>> delegateBmpFactory) {
-			document_ = std::shared_ptr<Document<T>>(new Document<T>(pool, delegateBmpFactory));
+		File(GP<DataPool> pool, std::shared_ptr<IBmpFactory<T>> delegateBmpFactory, std::shared_ptr<SafeInstance> safeInstance) {
+			document_ = std::shared_ptr<Document<T>>(new Document<T>(pool, delegateBmpFactory, safeInstance));
 		}
 		~File() {}
 
@@ -59,8 +59,8 @@ namespace ddjvu {
 		std::shared_ptr<IBmp<T>> getPageBitmap(int pageNum = 0, int width = 0, int height = 0, bool wait = false, int view = 0) {
 			return document_->getPageBitmap(pageNum, width, height, wait, view);
 		}
-		std::shared_ptr<IBmp<T>> getPageBitmap(int pageNum = 0, int width = 0, int height = 0, bool wait = false, std::string id = "") {
-			return document_->getPageBitmap(pageNum, width, height, wait, id);
+		std::shared_ptr<IBmp<T>> getPageBitmap(std::shared_ptr<SafeInstance> sageInstance, int pageNum = 0, int width = 0, int height = 0, bool wait = false, std::string id = "") {
+			return document_->getPageBitmap(sageInstance, pageNum, width, height, wait, id);
 		}
 		//
 		// Checks if page is rendered.
