@@ -30,8 +30,8 @@ namespace ddjvu {
 	private:
 		std::shared_ptr<Document<T>> document_;
 	public:
-		File(GP<DataPool> pool, std::shared_ptr<IBmpFactory<T>> delegateBmpFactory, std::shared_ptr<SafeInstance> safeInstance) {
-			document_ = std::shared_ptr<Document<T>>(new Document<T>(pool, delegateBmpFactory, safeInstance));
+		File(GP<DataPool> pool, std::shared_ptr<IBmpFactory<T>> delegateBmpFactory) {
+			document_ = std::shared_ptr<Document<T>>(new Document<T>(pool, delegateBmpFactory));
 		}
 		~File() {}
 
@@ -51,39 +51,17 @@ namespace ddjvu {
 		std::vector<Text> getPageText(int pageNum) {
 			return document_->getPageText(pageNum);
 		}
-		// Trying to get page image.
-		// Function supports synchronous and asynchronous mode.
-		//     In synchronous mode waits until page decoded.
-		//     In asynchronous mode function returns immediately.
-		// You should use ddjvu::Notifier to handle page decode completion.
-		std::shared_ptr<IBmp<T>> getPageBitmap(int pageNum = 0, int width = 0, int height = 0, bool wait = false, int view = 0) {
-			return document_->getPageBitmap(pageNum, width, height, wait, view);
+		// Request page
+		std::shared_ptr<Page<T>> getPage(std::string pageId, int pageNumber, int width, int height) {
+			return document_->getPage(pageId, pageNumber, width, height);
 		}
-		std::shared_ptr<IBmp<T>> getPageBitmap(std::shared_ptr<SafeInstance> sageInstance, int pageNum = 0, int width = 0, int height = 0, bool wait = false, std::string id = "") {
-			return document_->getPageBitmap(sageInstance, pageNum, width, height, wait, id);
+		// Remove page from decoding queue
+		void removePage(std::string pageId) {
+			return document_->removePage(pageId);
 		}
-		//
-		// Checks if page is rendered.
-		//    true if page is rendered.
-		//    false if page is aborted.
-		bool isBitmapReady(std::string id = "") {
-			return document_->isBitmapReady(id);
-		}
-		// Fuction return ddjvu::Notifier
-		std::shared_ptr<Notifier> getWindowNotifier() {
-			return document_->getWindowNotifier();
-		}
-		// Get view IDs that are already rendered
-		std::vector<int> getRenderedViews() {
-			return document_->getRenderedViews();
-		}
-		// Stop page decoding
-		void abortPageDecode(int pageNum, int width, int height, int view) {
-			document_->abortPageDecode(pageNum, width, height, view);
-		}
-
-		void abortPageDecode(std::string id) {
-			document_->abortPageDecode(id);
+		// Stop handling messages
+		void stopMessageHandling() {
+			document_->stopMessageHandling();
 		}
 	};
 
