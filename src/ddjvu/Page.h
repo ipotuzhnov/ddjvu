@@ -40,7 +40,7 @@ namespace ddjvu
 
 		void error(std::string err) {
 			err = "===================" + err + "===================";
-			fprintf(stdout,"logmsg: %s\n",err.c_str());
+			//fprintf(stdout,"logmsg: %s\n",err.c_str());
 		}
 
 		void decodeThreadFunction_()
