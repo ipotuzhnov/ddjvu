@@ -19,6 +19,8 @@
 namespace ddjvu
 {
 
+	static int WAIT_INTERVAL = 10 * 1000;
+
 	template<class T>
 	class Page
 	{
@@ -55,7 +57,7 @@ namespace ddjvu
 				error("ThreadlessPage: Cannot access page " + std::to_string(pageNum_));
 			while (! ddjvu_page_decoding_done(page)) {
 				error("ThreadlessPage: Decoding page sleep for 100 milliseconds");
-				usleep(100 * 1000);
+				usleep(WAIT_INTERVAL);
 			}
 			if (ddjvu_page_decoding_error(page)) {
 				error("ThreadlessPage: Cannot decode page " + std::to_string(pageNum_));
