@@ -19,7 +19,7 @@
 namespace ddjvu
 {
 
-	static int WAIT_INTERVAL = 10 * 1000;
+	static int WAIT_INTERVAL = 100 * 1000;
 
 	template<class T>
 	class Page
