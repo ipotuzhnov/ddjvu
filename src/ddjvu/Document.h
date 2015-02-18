@@ -34,13 +34,13 @@ namespace ddjvu
 
 	class CallbackClosure {
 	public:
-		std::shared_ptr<Notifier> windowNotifier;
 		std::shared_ptr<Notifier> documentNotifier;
 	};
 
 	static void ddjvuMessageCallback(ddjvu_context_t *context, void *closure)
 	{
 		CallbackClosure *cc = (CallbackClosure*)closure;
+		cc->documentNotifier->set(message_document::MESSAGE);
 	}
 
 	template <class T>
@@ -59,6 +59,7 @@ namespace ddjvu
 		bool handling_;
 		bool info;
 
+		std::shared_ptr<Notifier> documentNotifier_;
 		std::thread messageHandleThread_;
 
 		std::mutex pages_mtx_;
@@ -85,7 +86,9 @@ namespace ddjvu
 			/* Create message handling thread */
 			messageHandleThread_ = std::thread(&Document::messageHandleThreadFunction_, this);
 			/* Set callback function */
+			documentNotifier_ = std::shared_ptr<Notifier>(new Notifier(message_map::DOCUMENT));
 			cc_ = new CallbackClosure();
+			cc_->documentNotifier = documentNotifier_;
 			ddjvu_message_set_callback(context_, ddjvuMessageCallback, cc_);
 			/* Create document */
 			document_ = ddjvu_document_create(context_, 0, FALSE);
@@ -321,7 +324,8 @@ namespace ddjvu
 				}
 				// Wait 100 milliseconds
 				error("No messages wait for 100 milliseconds");
-				usleep(100 * 1000);
+				documentNotifier_->reset(message_document::MESSAGE);
+				documentNotifier_->waitFor(100);
 			}
 		}
 
