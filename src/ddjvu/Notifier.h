@@ -48,14 +48,14 @@ namespace ddjvu
 			cv_.wait(lck);
 		}
 
-		void waitFor(int milliseconds = 0, int message = -1) {
+		void waitFor(int message = -1, int seconds = 0) {
 			std::unique_lock<std::mutex> lck(mtx_);
 
 			if (message > 0)
 				if (messages_[message])
 					return;
 
-			cv_.wait_for(lck, std::chrono::milliseconds(milliseconds));
+			cv_.wait_for(lck, std::chrono::seconds(seconds));
 		}
 
 		void set(int message) {

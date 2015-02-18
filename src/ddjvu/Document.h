@@ -4,6 +4,7 @@
 #pragma once
 
 #include <stdio.h>
+#include <unistd.h>
 
 #include <memory>
 #include <mutex>
@@ -26,6 +27,8 @@
 #include "IBmpFactory.h"
 #include "IBmp.h"
 
+
+
 namespace ddjvu
 {
 
@@ -38,8 +41,6 @@ namespace ddjvu
 	static void ddjvuMessageCallback(ddjvu_context_t *context, void *closure)
 	{
 		CallbackClosure *cc = (CallbackClosure*)closure;
-		if (!cc->windowNotifier->check(message_window::CLOSE))
-			cc->documentNotifier->set(message_document::MESSAGE);
 	}
 
 	template <class T>
@@ -55,9 +56,8 @@ namespace ddjvu
 		CallbackClosure *cc_;
 
 		bool isDocumentValid_;
-
-		std::shared_ptr<Notifier> windowNotifier_;
-		std::shared_ptr<Notifier> documentNotifier_;
+		bool handling_;
+		bool info;
 
 		std::thread messageHandleThread_;
 
@@ -73,6 +73,8 @@ namespace ddjvu
 			delegateBmpFactory_ = delegateBmpFactory;
 
 			isDocumentValid_ = false;
+			handling_ = true;
+			info = false;
 
 			pool_ = pool;
 
@@ -83,12 +85,7 @@ namespace ddjvu
 			/* Create message handling thread */
 			messageHandleThread_ = std::thread(&Document::messageHandleThreadFunction_, this);
 			/* Set callback function */
-			windowNotifier_ = std::shared_ptr<Notifier>(new Notifier(message_map::WINDOW));
-			documentNotifier_ = std::shared_ptr<Notifier>(new Notifier(message_map::DOCUMENT));
 			cc_ = new CallbackClosure();
-			cc_->windowNotifier = windowNotifier_;
-			cc_->documentNotifier = documentNotifier_;
-
 			ddjvu_message_set_callback(context_, ddjvuMessageCallback, cc_);
 			/* Create document */
 			document_ = ddjvu_document_create(context_, 0, FALSE);
@@ -97,13 +94,16 @@ namespace ddjvu
 
 			while (! ddjvu_document_decoding_done(document_)) {
 				error("Creating document sleep for 100 milliseconds");
-				documentNotifier_->waitFor(100);
+				usleep(100 * 1000);
 			}
 			if (ddjvu_document_decoding_error(document_)) {
 				error("Cannot decode document.");
 			} else {
 				isDocumentValid_ = true;
 				error("Doc created successfully");
+			}
+			while (!info) {
+				error("Waiting document info sleep for 100 milliseconds");
 			}
 		}
 
@@ -114,8 +114,7 @@ namespace ddjvu
 				pages_.erase(pages_.begin()->first);
 			}
 
-			windowNotifier_->set(message_window::CLOSE);
-			documentNotifier_->set(message_document::MESSAGE);
+			handling_ = false;
 			if (messageHandleThread_.joinable())
 				messageHandleThread_.join();
 
@@ -128,8 +127,7 @@ namespace ddjvu
 		}
 
 		void stopMessageHandling() {
-			windowNotifier_->set(message_window::CLOSE);
-			documentNotifier_->set(message_document::MESSAGE);
+			handling_ = false;
 		}
 
 		bool isDocumentValid() {
@@ -171,30 +169,21 @@ namespace ddjvu
 			return pages_[pageId];
 		}
 
-		std::shared_ptr<Page<T>> findPage(ddjvu_page_t *page) {
-			std::lock_guard<std::mutex> lck(pages_mtx_);
-			std::shared_ptr<Page<T>> res;
-			for (auto it = pages_.begin(); it != pages_.end(); ++it) {
-				if (page == it->second->getDdjvuPage())
-					return it->second;
-			}
-			return res;
-		}
-
 		void removePage(std::string pageId) {
 			std::lock_guard<std::mutex> lck(pages_mtx_);
 			pages_.erase(pageId);
 		}
 
-		GP<DataPool> getPool() {
+		GP<DataPool> getPool()
+		{
 			return pool_;
 		}
 
-		ddjvu_context_t * getContext() {
+		ddjvu_context_t *getContext() {
 			return context_;
 		}
 
-		ddjvu_document_t * getDocument() {
+		ddjvu_document_t *getDocument() {
 			return document_;
 		}
 	private:
@@ -224,6 +213,15 @@ namespace ddjvu
 							int y2 = height - miniexp_to_int(miniexp_nth(2, exp));
 
 							std::string s(miniexp_to_str(miniexp_nth(5, exp)));
+							/* Old style windows only conversion
+							int len;
+							int slength = (int)s.length() + 1;
+							len = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), slength, 0, 0); 
+							wchar_t* buf = new wchar_t[len];
+							MultiByteToWideChar(CP_UTF8, 0, s.c_str(), slength, buf, len);
+							std::wstring word(buf);
+							delete[] buf;
+							*/
 
 							std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
 							std::wstring word = converter.from_bytes(s);
@@ -253,12 +251,14 @@ namespace ddjvu
 			int streamid = 0;
 			int i = 0;
 
-			while (!windowNotifier_->check(message_window::CLOSE)) {
+			while (handling_) {
+
+				if (!handling_)
+					break;
 
 				bool isEOF = false;
 				const ddjvu_message_t *msg;
 				ddjvu_document_t *document = nullptr;
-				ddjvu_page_t *page = nullptr;
 
 				// Don't wait
 				//ddjvu_message_wait(context_);
@@ -300,18 +300,9 @@ namespace ddjvu
 						break;
 					case DDJVU_DOCINFO:
 						error("Got doc info");
-						documentNotifier_->set(message_document::INFO);
+						info = true;
 						break;
 					case DDJVU_PAGEINFO:
-						page = msg->m_any.page;
-						if (page == nullptr)
-							error("msg->m_any.page is nullprt");
-						else {
-							if (ddjvu_page_decoding_status(msg->m_any.page) == DDJVU_JOB_OK) {
-								auto res = findPage(page);
-								res->getPageNotifier()->set(message_page::DECODED);
-							}
-						}
 						break;
 					case DDJVU_RELAYOUT:
 						break;
@@ -328,11 +319,9 @@ namespace ddjvu
 
 					ddjvu_message_pop(context_);
 				}
-
-				documentNotifier_->reset(message_document::MESSAGE);
 				// Wait 100 milliseconds
 				error("No messages wait for 100 milliseconds");
-				documentNotifier_->waitFor(100);
+				usleep(100 * 1000);
 			}
 		}
 
