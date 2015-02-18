@@ -4,7 +4,6 @@
 #pragma once
 
 #include <stdio.h>
-#include <unistd.h>
 
 #include <memory>
 #include <thread>
@@ -25,7 +24,10 @@ namespace ddjvu
 	private:
 		std::shared_ptr<IBmpFactory<T>> delegateBmpFactory_;
 
+		std::shared_ptr<Notifier> pageNotifier_;
+
 		ddjvu_document_t *document_;
+		ddjvu_page_t *page_;
 		int pageNum_;
 		int width_;
 		int height_;
@@ -49,15 +51,14 @@ namespace ddjvu
 				return;
 
 			error("ThreadlessPage: Start decoding page " + std::to_string(pageNum_));
-			ddjvu_page_t *page;
 			/* Decode page */
-			if (! (page = ddjvu_page_create_by_pageno(document_, pageNum_)))
+			if (! (page_ = ddjvu_page_create_by_pageno(document_, pageNum_)))
 				error("ThreadlessPage: Cannot access page " + std::to_string(pageNum_));
-			while (! ddjvu_page_decoding_done(page)) {
+			while (! ddjvu_page_decoding_done(page_)) {
 				error("ThreadlessPage: Decoding page sleep for 100 milliseconds");
-				usleep(100 * 1000);
+				pageNotifier_->waitFor(100);
 			}
-			if (ddjvu_page_decoding_error(page)) {
+			if (ddjvu_page_decoding_error(page_)) {
 				error("ThreadlessPage: Cannot decode page " + std::to_string(pageNum_));
 				return;
 			}
@@ -66,7 +67,7 @@ namespace ddjvu
 			/* Render page */
 			error("ThreadlessPage: Start rendering page " + std::to_string(pageNum_));
 
-			ddjvu_page_type_t type = ddjvu_page_get_type(page);
+			ddjvu_page_type_t type = ddjvu_page_get_type(page_);
 
 			bool isBitonal = (type == DDJVU_PAGETYPE_BITONAL) ? true : false;
 
@@ -76,8 +77,8 @@ namespace ddjvu
 			// ddjvu_page_render 2nd param
 			ddjvu_render_mode_t mode = isBitonal ? DDJVU_RENDER_MASKONLY : DDJVU_RENDER_COLOR;//DDJVU_RENDER_BLACK;
 
-			int width = width_ ? width_ : ddjvu_page_get_width(page);
-			int height = height_ ? height_ : ddjvu_page_get_height(page);
+			int width = width_ ? width_ : ddjvu_page_get_width(page_);
+			int height = height_ ? height_ : ddjvu_page_get_height(page_);
 
 			// ddjvu_page_render 3rd param
 			ddjvu_rect_t pageRect = { 0, 0, static_cast<unsigned int>(width), static_cast<unsigned int>(height) };
@@ -99,7 +100,7 @@ namespace ddjvu
 			char *imageBuffer = new char[rowSize * height];
 			memset(imageBuffer, 0, rowSize * height);
 
-			if (ddjvu_page_render(page, mode, &pageRect, &rendRect, format, rowSize, imageBuffer)) {
+			if (ddjvu_page_render(page_, mode, &pageRect, &rendRect, format, rowSize, imageBuffer)) {
 				// Render HBITMAP
 				int bitsPixel = isBitonal ? 1 : 3;
 				int colors = isBitonal ? 256 : 0;
@@ -110,8 +111,8 @@ namespace ddjvu
 			delete[] imageBuffer;
 			ddjvu_format_release(format);
 		
-			ddjvu_page_release(page);
-			page = nullptr;
+			ddjvu_page_release(page_);
+			page_ = nullptr;
 
 			rendered = true;
 
@@ -121,9 +122,12 @@ namespace ddjvu
 		Page(ddjvu_document_t *document, std::shared_ptr<IBmpFactory<T>> delegateBmpFactory, std::string id = "", int pageNum = 0, int width = 0, int height = 0) {
 			delegateBmpFactory_ = delegateBmpFactory;
 
+			pageNotifier_ = std::shared_ptr<Notifier>(new Notifier(message_map::PAGE));
+
 			bitmap_ = std::shared_ptr<IBmp<T>>();
 
 			document_ = document;
+			page_ = nullptr;
 			pageNum_ = pageNum;
 			width_ = width;
 			height_ = height;
@@ -137,6 +141,14 @@ namespace ddjvu
 		~Page() {
 			if (decodeThread_.joinable())
 				decodeThread_.join();
+		}
+
+		ddjvu_page_t * getDdjvuPage() {
+			return page_;
+		}
+
+		std::shared_ptr<Notifier> getPageNotifier() {
+			return pageNotifier_;
 		}
 
 		void startInThread() {
@@ -156,7 +168,7 @@ namespace ddjvu
 		void wait() {
 			while (!rendered) {
 				error("ThreadlessPage: Wait renderer 100 milliseconds");
-				usleep(100 * 1000);
+				pageNotifier_->waitFor(100);
 			}
 		}
 

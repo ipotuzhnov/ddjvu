@@ -16,7 +16,7 @@
 
 #include "IBmpFactory.h"
 
-/*	Files "File.h" and "File.cpp" implements class ddjvu::File
+/*	Files "File.h" implements class ddjvu::File
 
 ddjvu::File is easy to use class that provides access to DjVu document data.
 
